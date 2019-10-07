@@ -1,0 +1,388 @@
+---
+title: "Delphinidae Observation Data (SubjectEvaluation_2R)"
+author: "Esteban Jorquera"
+date: "13/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+###Rmd setup
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+```{r libraries}
+###load libraries
+library(tidyverse)#base library
+library(dismo)#gets animal observation data
+library(knitr)#graphic tools for Rmarkdown (allows kable)
+library(kableExtra)#extra tools for kable
+library(leaflet)#graphic tools for maps
+library(rgbif)#search tools for gbif
+```
+
+```{r Values}
+curr_Year <- format(Sys.Date(), "%Y")
+
+occ_Limit <- 100000 #less than 101000; 5000 is good for testing
+
+names_months <- c(
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec"
+)
+
+pal <- colorFactor(
+  c(
+    "red",
+    "blue",
+    "pink",
+    "yellow",
+    "purple",
+    "cyan",
+    "brown",
+    "lightgrey",
+    "grey",
+    "black",
+    "salmon",
+    "lightblue",
+    "darkred",
+    "green",
+    "darkgreen",
+    "orange",
+    "navy"
+  ),
+  domain = c(
+    "Cephalorhynchus",
+    "Delphinus",
+    "Feresa",
+    "Globicephala",
+    "Grampus",
+    "Lagenodelphis",
+    "Lagenorhynchus",
+    "Lissodelphis",
+    "Orcaella",
+    "Orcinus",
+    "Peponocephala",
+    "Pseudorca",
+    "Sotalia",
+    "Sousa",
+    "Stenella",
+    "Steno",
+    "Tursiops"
+  )
+)
+
+```
+
+```{r Delphinidae data}
+###gets Delphinidae data
+
+#gets all data of the Orcinus genus
+#Orcinus_Data <- gbif('Orcinus','*', down=TRUE)
+
+#Code below is more...thorough... much better than doing several small data frames for each genus and then join them, although slower, but also future proof, should a new species be described.
+
+#gets Delphinidae species, if I understood correctly the example
+Delphinidae <- name_suggest(
+  q = "Delphinidae",
+  rank = "family"
+)
+
+#gets the number of Delphinidae observations, under filter conditions since the limit is 250000; which will indicate an error but not report it to you, also trying to keep the number below 101000 items to download, mainly due to GBIF download limits, and time...
+
+#tries a period of 5 years from the current year, if the number of observations is over the limit, it tries a period of 4 years and tries again, until it only tries for the current year, if it still is over the limit it just gives up and limits the download
+
+Delphinidae_count <- occ_search(
+  taxonKey = Delphinidae$key,
+  hasCoordinate = TRUE,
+  basisOfRecord = "HUMAN_OBSERVATION",
+  year = (paste(as.double(curr_Year)-4,",",curr_Year)),
+  return = "meta"
+)$count
+year_from <- as.double(curr_Year)-4
+year_to <- curr_Year
+
+if(Delphinidae_count >= occ_Limit){
+  Delphinidae_count <- occ_search(
+    taxonKey = Delphinidae$key,
+    hasCoordinate = TRUE,
+    basisOfRecord = "HUMAN_OBSERVATION",
+    year = (paste(as.double(curr_Year)-3,",",curr_Year)),
+    return = "meta"
+  )$count
+  year_from <- as.double(curr_Year)-3
+  
+  if(Delphinidae_count >= occ_Limit){
+    Delphinidae_count <- occ_search(
+      taxonKey = Delphinidae$key,
+      hasCoordinate = TRUE,
+      basisOfRecord = "HUMAN_OBSERVATION",
+      year = (paste(as.double(curr_Year)-2,",",curr_Year)),
+      return = "meta"
+    )$count
+    year_from <- as.double(curr_Year)-3
+    
+    if(Delphinidae_count >= occ_Limit){
+      Delphinidae_count <- occ_search(
+        taxonKey = Delphinidae$key,
+        hasCoordinate = TRUE,
+        basisOfRecord = "HUMAN_OBSERVATION",
+        year = (paste(as.double(curr_Year)-2,",",curr_Year)),
+        return = "meta"
+      )$count
+      year_from <- as.double(curr_Year)-2
+      
+      if(Delphinidae_count >= occ_Limit){
+        Delphinidae_count <- occ_search(
+          taxonKey = Delphinidae$key,
+          hasCoordinate = TRUE,
+          basisOfRecord = "HUMAN_OBSERVATION",
+          year = (paste(as.double(curr_Year)-1,",",curr_Year)),
+          return = "meta"
+        )$count
+        year_from <- as.double(curr_Year)-1
+        
+        if(Delphinidae_count >= occ_Limit){
+          Delphinidae_count <- occ_search(
+            taxonKey = Delphinidae$key,
+            hasCoordinate = TRUE,
+            basisOfRecord = "HUMAN_OBSERVATION",
+            year = (paste(as.double(curr_Year)-0,",",curr_Year)),
+            return = "meta"
+          )$count
+          year_from <- as.double(curr_Year)-0
+          
+          if(Delphinidae_count >= occ_Limit){
+            Delphinidae_count <- occ_search(
+              taxonKey = Delphinidae$key,
+              hasCoordinate = TRUE,
+              basisOfRecord = "HUMAN_OBSERVATION",
+              year = (paste(as.double(curr_Year)-0,",",curr_Year)),
+              limit = occ_Limit,
+              return = "meta"
+            )$count
+            year_from <- as.double(curr_Year)-0
+          }
+        }
+      }
+    }
+  }
+}
+
+#Uses previous data and makes a data frame, also sets a limit to observations, otherwise it is set automatically to 500, ignoring data
+Delphinidae_Data <- occ_search(
+  taxonKey = Delphinidae$key,
+  basisOfRecord = "HUMAN_OBSERVATION",
+  hasCoordinate = TRUE,
+  year = (paste(as.double(year_from),",",curr_Year)),
+  limit = Delphinidae_count,
+  return = 'data'
+)
+
+```
+
+```{r Data filtering}
+
+###Selects species, record type, and geographical data (longitude, latitude)
+###then removes data with non available longitude, latitude and non available genus key
+Delphinidae_Loc <- Delphinidae_Data %>%
+  dplyr::select(
+    genericName,
+    genus,
+    species,
+    specificEpithet,
+    scientificName,
+    year,
+    decimalLongitude, 
+    decimalLatitude
+  ) %>% 
+  filter( #should be mostly redundant
+    !is.na(decimalLongitude) &
+      !is.na(decimalLatitude) &
+      !is.na(genus) &
+      !is.na(specificEpithet)
+  )
+
+Delphinidae_Species <- Delphinidae_Loc %>% 
+  group_by(specificEpithet) %>%
+  summarise(
+    Occurrences=n()
+  ) %>% 
+  rename(
+    Species = specificEpithet
+  )
+
+Delphinidae_Genus <- Delphinidae_Loc %>% 
+  group_by(genus) %>%
+  summarise(
+    Occurrences=n()
+  ) %>% 
+  rename(
+    Genus = genus
+  )
+
+```
+
+Human wildlife observations registered `r ifelse(year_to != year_from,{paste ("from",as.numeric(year_from),"to",as.numeric(year_to))},{paste("since",as.numeric(year_to))})` have produced `r dplyr::count(Delphinidae_Data)` observations of members of the *Delphinidae* family, registering locational ocurrence data for `r dplyr::count(summarise(group_by(Delphinidae_Data,speciesKey)))` species, between `r dplyr::count(Delphinidae_Genus)` genera.
+
+Of the recorded observations, the most common genera corresponds to *`r Delphinidae_Genus %>% filter(Occurrences == max(Occurrences)) %>%  subset(select = -Occurrences)`*, specifically to the *`r Delphinidae_Species %>% filter(Occurrences == max(Occurrences)) %>%  subset(select = -Occurrences)`* species. Conversely the less commonly seen genera corresponds to *`r Delphinidae_Genus %>% filter(Occurrences == min(Occurrences)) %>%  subset(select = -Occurrences)`*.
+
+```{r Data tables, results='asis'}
+
+Delphinidae_Table <- Delphinidae_Loc %>%
+  group_by(genus,specificEpithet) %>%
+  summarise(
+    occurrences=n()
+  ) %>% 
+  mutate(
+    Genus = cell_spec(
+      genus,
+      "html",
+      color = "white",
+      italic = TRUE,
+      background = pal(genus)
+    )
+  ) %>% 
+  mutate(
+    Species = cell_spec(
+      specificEpithet,
+      "html",
+      color = "black",
+      italic = TRUE
+      )
+  ) %>% 
+  mutate(
+    Occurrences = occurrences
+  ) %>%
+  ungroup() %>% 
+  dplyr::select(-genus,-specificEpithet,-occurrences)
+
+kable(
+  Delphinidae_Table,
+  format = "html",
+  escape = FALSE,
+  caption = "Table 1. Observation data of members of the Delphinidae family obtained from the Global Biodiversity Information Facility, corresponding to the analysed period, depicting the number of occurrences per species. Species are grouped by genera utilising the same color palette used in all figures"
+) %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c(
+      "striped",
+      "hover"
+    )
+  )
+
+```
+
+```{r Data plots, fig.align="center", fig.width=12, fig.height=6, fig.cap="Figure 1. Observation data of members of the Delphinidae family grouped by genera, obtained from the Global Biodiversity Information Facility, corresponding to each year of the analysed period.Genera are colorized utilising the same color palette used in all figures"}
+
+Delphinidae_Observations <- Delphinidae_Data %>% 
+  group_by(genus,month,year) %>%
+  summarise(Occurrences=n()
+  ) %>% 
+  rename(
+    Genus = genus,
+    Year = year
+  ) %>% 
+  filter(
+    !is.na(Genus)
+  )
+
+Delphinidae_Observations$Month <- names_months[
+  Delphinidae_Observations$month
+  ]
+
+ggplot(
+  Delphinidae_Observations,
+  aes(
+    x = factor(
+      Month,
+      levels=c(
+        "Jan","Feb","Mar","Apr","May","Jun",
+        "Jul","Aug","Sep","Oct","Nov","Dec"
+      )
+    ),
+    #x = Month,
+    y = Occurrences,
+    shape = Genus,
+    fill = Genus
+  )
+) +
+  geom_point() + 
+  #geom_smooth(    method = "lm",    formula = y ~ I(x^2) + x  ) +
+  facet_wrap(
+    ~Year,
+    ncol = 2
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  ) + 
+  labs(
+    title = "Delphinidae genera sightings",
+    x = "Month",
+    y = "Occurrences"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Cephalorhynchus" = "red",
+      "Delphinus" = "blue",
+      "Feresa" = "pink",
+      "Globicephala" = "yellow",
+      "Grampus" = "purple",
+      "Lagenodelphis" = "cyan",
+      "Lagenorhynchus" = "brown",
+      "Lissodelphis" = "lightgrey",
+      "Orcaella" = "grey",
+      "Orcinus" = "black",
+      "Peponocephala" = "salmon",
+      "Pseudorca" = "lightblue",
+      "Sotalia" = "darkred",
+      "Sousa" = "green",
+      "Stenella" = "darkgreen",
+      "Steno" = "orange",
+      "Tursiops" =	"navy"
+    )
+  ) +
+  scale_shape_manual(
+    values = c(
+      "Cephalorhynchus" = 21,
+      "Delphinus" = 22,
+      "Feresa" = 23,
+      "Globicephala" = 24,
+      "Grampus" = 25,
+      "Lagenodelphis" = 21,
+      "Lagenorhynchus" = 22,
+      "Lissodelphis" = 23,
+      "Orcaella" = 24,
+      "Orcinus" = 25,
+      "Peponocephala" = 21,
+      "Pseudorca" = 22,
+      "Sotalia" = 23,
+      "Sousa" = 24,
+      "Stenella" = 25,
+      "Steno" = 21,
+      "Tursiops" = 22
+    )
+  )
+
+```
+
+
+```{r Data mapping, fig.align="center", fig.width=9, fig.height=6, fig.cap="Figure 2. Location data the Delphinidae family species grouped by genera, obtained from the Global Biodiversity Information Facility,corresponding to the analysed period.Species are grouped by genera utilising the same color palette used in all figures"}
+
+leaflet(data = Delphinidae_Loc) %>%
+  addProviderTiles("OpenTopoMap") %>%
+  setView(-99, 19, zoom = 4) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    ~decimalLongitude,
+    ~decimalLatitude,
+    label = ~paste(as.character(genus),as.character(specificEpithet)),
+    fillOpacity = 0.6,
+    radius = 5,
+    color = ~pal(genericName),
+    stroke = FALSE,
+    #clusterOptions = markerClusterOptions()
+  )
+
+```
