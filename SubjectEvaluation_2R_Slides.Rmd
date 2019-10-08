@@ -1,0 +1,247 @@
+---
+title: "Delphinidae Observation Data"
+subtitle: "SubjectEvaluation_2R"
+author: "Esteban Jorquera"
+date: "`r format(Sys.time(), '%d/%m, %Y')`"
+css: bootstrap.css
+output:
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    logo: SubjectEvaluation_2R_Slides-figure\PUC_logo.png
+---
+
+```{r setup, include=FALSE}
+###Rmd setup
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+```{r libraries}
+###load libraries
+library(tidyverse)#base library
+library(dismo)#gets animal observation data
+library(knitr)#graphic tools for Rmarkdown (allows kable)
+library(kableExtra)#extra tools for kable
+library(leaflet)#graphic tools for maps
+library(rgbif)#search tools for gbif
+options("kableExtra.html.bsTable" = T)
+```
+
+```{r Values}
+###preset values
+curr_Year <- format(Sys.Date(), "%Y")
+occ_Limit <- 100000 #less than 101000; 5000 is good for testing
+
+names_months <- c(
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec"
+)
+
+pal <- colorFactor(
+  c(
+    "red",
+    "blue",
+    "pink",
+    "yellow",
+    "purple",
+    "cyan",
+    "brown",
+    "lightgrey",
+    "grey",
+    "black",
+    "salmon",
+    "lightblue",
+    "darkred",
+    "green",
+    "darkgreen",
+    "orange",
+    "navy"
+  ),
+  domain = c(
+    "Cephalorhynchus",
+    "Delphinus",
+    "Feresa",
+    "Globicephala",
+    "Grampus",
+    "Lagenodelphis",
+    "Lagenorhynchus",
+    "Lissodelphis",
+    "Orcaella",
+    "Orcinus",
+    "Peponocephala",
+    "Pseudorca",
+    "Sotalia",
+    "Sousa",
+    "Stenella",
+    "Steno",
+    "Tursiops"
+  )
+)
+```
+
+```{r Delphinidae data}
+###gets Delphinidae data
+
+#gets Delphinidae species
+Delphinidae <- name_suggest(
+  q = "Delphinidae",
+  rank = "family"
+)
+
+#gets the number of Delphinidae observations, under filter conditions since the limit is 250000; which will indicate an error but not report it to you, also trying to keep the number below 101000 items to download, mainly due to GBIF download limits, and time...
+
+#tries a period of 5 years from the current year, if the number of observations is over the limit, it tries a period of 4 years and tries again, until it only tries for the current year, if it still is over the limit it just gives up and limits the download
+
+Delphinidae_count <- occ_search(
+  taxonKey = Delphinidae$key,
+  hasCoordinate = TRUE,
+  basisOfRecord = "HUMAN_OBSERVATION",
+  year = (paste(as.double(curr_Year)-4,",",curr_Year)),
+  return = "meta"
+)$count
+year_from <- as.double(curr_Year)-4
+year_to <- curr_Year
+
+if(Delphinidae_count >= occ_Limit){
+  Delphinidae_count <- occ_search(
+    taxonKey = Delphinidae$key,
+    hasCoordinate = TRUE,
+    basisOfRecord = "HUMAN_OBSERVATION",
+    year = (paste(as.double(curr_Year)-3,",",curr_Year)),
+    return = "meta"
+  )$count
+  year_from <- as.double(curr_Year)-3
+  
+  if(Delphinidae_count >= occ_Limit){
+    Delphinidae_count <- occ_search(
+      taxonKey = Delphinidae$key,
+      hasCoordinate = TRUE,
+      basisOfRecord = "HUMAN_OBSERVATION",
+      year = (paste(as.double(curr_Year)-2,",",curr_Year)),
+      return = "meta"
+    )$count
+    year_from <- as.double(curr_Year)-3
+    
+    if(Delphinidae_count >= occ_Limit){
+      Delphinidae_count <- occ_search(
+        taxonKey = Delphinidae$key,
+        hasCoordinate = TRUE,
+        basisOfRecord = "HUMAN_OBSERVATION",
+        year = (paste(as.double(curr_Year)-2,",",curr_Year)),
+        return = "meta"
+      )$count
+      year_from <- as.double(curr_Year)-2
+      
+      if(Delphinidae_count >= occ_Limit){
+        Delphinidae_count <- occ_search(
+          taxonKey = Delphinidae$key,
+          hasCoordinate = TRUE,
+          basisOfRecord = "HUMAN_OBSERVATION",
+          year = (paste(as.double(curr_Year)-1,",",curr_Year)),
+          return = "meta"
+        )$count
+        year_from <- as.double(curr_Year)-1
+        
+        if(Delphinidae_count >= occ_Limit){
+          Delphinidae_count <- occ_search(
+            taxonKey = Delphinidae$key,
+            hasCoordinate = TRUE,
+            basisOfRecord = "HUMAN_OBSERVATION",
+            year = (paste(as.double(curr_Year)-0,",",curr_Year)),
+            return = "meta"
+          )$count
+          year_from <- as.double(curr_Year)-0
+          
+          if(Delphinidae_count >= occ_Limit){
+            Delphinidae_count <- occ_search(
+              taxonKey = Delphinidae$key,
+              hasCoordinate = TRUE,
+              basisOfRecord = "HUMAN_OBSERVATION",
+              year = (paste(as.double(curr_Year)-0,",",curr_Year)),
+              limit = occ_Limit,
+              return = "meta"
+            )$count
+            year_from <- as.double(curr_Year)-0
+          }
+        }
+      }
+    }
+  }
+}
+
+#Uses previous data and makes a data frame, also sets a limit to observations, otherwise it is set automatically to 500, ignoring data
+Delphinidae_Data <- occ_search(
+  taxonKey = Delphinidae$key,
+  basisOfRecord = "HUMAN_OBSERVATION",
+  hasCoordinate = TRUE,
+  year = (paste(as.double(year_from),",",curr_Year)),
+  limit = Delphinidae_count,
+  return = 'data'
+)
+```
+
+```{r Data filtering}
+###Selects species, record type, and geographical data (longitude, latitude)
+###then removes data with non available longitude, latitude and non available genus key
+
+Delphinidae_Loc <- Delphinidae_Data %>%
+  dplyr::select(
+    genericName,
+    genus,
+    species,
+    specificEpithet,
+    scientificName,
+    year,
+    decimalLongitude, 
+    decimalLatitude
+  ) %>% 
+  filter( #should be mostly redundant
+    !is.na(decimalLongitude) &
+      !is.na(decimalLatitude) &
+      !is.na(genus) &
+      !is.na(specificEpithet)
+  )
+
+Delphinidae_Species <- Delphinidae_Loc %>% 
+  group_by(specificEpithet) %>%
+  summarise(
+    Occurrences=n()
+  ) %>% 
+  rename(
+    Species = specificEpithet
+  )
+
+Delphinidae_Genus <- Delphinidae_Loc %>% 
+  group_by(genus) %>%
+  summarise(
+    Occurrences=n()
+  ) %>% 
+  rename(
+    Genus = genus
+  )
+```
+
+
+## Delphinidae
+
+
+## Slide with Bullets
+
+- Bullet 1
+- Bullet 2
+- Bullet 3
+
+## Slide with R Output
+
+```{r cars, echo = TRUE}
+summary(cars)
+```
+
+## Slide with Plot
+
+```{r pressure}
+plot(pressure)
+```
+
